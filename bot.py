@@ -2,7 +2,6 @@ import threading
 import telebot
 from telebot import types
 import time
-import schedule
 import os
 import json
 from datetime import datetime
@@ -72,25 +71,102 @@ def send_welcome(message):
 def handle_set_time(message):
     chat_id = str(message.chat.id)
     if check_admin(chat_id):
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        times = [
-            ("🕟 4:30 ص", "04:30"),
-            ("🕕 6:30 ص", "06:30"),
-            ("🕧 12:30 م", "12:30"),
-            ("🕝 2:30 م", "14:30"),
-            ("🕟 4:30 م", "16:30"),
-            ("🕡 6:30 م", "18:30")
-        ]
+        markup = types.InlineKeyboardMarkup(row_width=3)
         
-        for text, time_val in times:
+        # جميع الأوقات من 00:00 إلى 23:30 (كل ساعة بنصف ساعة)
+        times = []
+        for hour in range(0, 24):
+            time_24h = f"{hour:02d}:30"
+            # تحويل التوقيت إلى 12 ساعة مع تحديد ص/م
+            if hour == 0:
+                time_12h = "12:30 ص"
+            elif hour < 12:
+                time_12h = f"{hour}:30 ص"
+            elif hour == 12:
+                time_12h = "12:30 م"
+            else:
+                time_12h = f"{hour-12}:30 م"
+            
+            emoji = "🕛" if hour == 0 else f"🕧" if hour == 12 else f"🕐" if hour == 1 else f"🕑" if hour == 2 else f"🕒" if hour == 3 else f"🕓" if hour == 4 else f"🕔" if hour == 5 else f"🕕" if hour == 6 else f"🕖" if hour == 7 else f"🕗" if hour == 8 else f"🕘" if hour == 9 else f"🕙" if hour == 10 else f"🕚" if hour == 11 else f"🕛" if hour == 12 else f"🕜" if hour == 13 else f"🕝" if hour == 14 else f"🕞" if hour == 15 else f"🕟" if hour == 16 else f"🕠" if hour == 17 else f"🕡" if hour == 18 else f"🕢" if hour == 19 else f"🕣" if hour == 20 else f"🕤" if hour == 21 else f"🕥" if hour == 22 else f"🕦" if hour == 23 else "🕛"
+            
+            times.append((f"{emoji} {time_12h}", time_24h))
+        
+        # تقسيم الأزرار إلى صفحات (كل 8 أزرار في صفحة)
+        page = int(message.text.split()[1]) if len(message.text.split()) > 1 else 0
+        start_idx = page * 8
+        end_idx = start_idx + 8
+        
+        for text, time_val in times[start_idx:end_idx]:
             if time_val in groups_data.get(chat_id, {}).get("times", []):
                 text += " ✅"
             markup.add(types.InlineKeyboardButton(text, callback_data=f"time_{time_val}"))
         
+        # أزرار التنقل بين الصفحات
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(types.InlineKeyboardButton("◀ السابق", callback_data=f"time_page_{page-1}"))
+        if end_idx < len(times):
+            nav_buttons.append(types.InlineKeyboardButton("التالي ▶", callback_data=f"time_page_{page+1}"))
+        
+        if nav_buttons:
+            markup.row(*nav_buttons)
+        
         markup.add(types.InlineKeyboardButton("💾 حفظ الأوقات", callback_data="save_times"))
-        bot.send_message(chat_id, "⏰ اختر أوقات الإرسال:", reply_markup=markup)
+        bot.send_message(
+            chat_id,
+            f"⏰ اختر أوقات الإرسال (الصفحة {page+1}):",
+            reply_markup=markup
+        )
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("time_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("time_page_"))
+def handle_time_page(call):
+    page = int(call.data.split("_")[2])
+    chat_id = str(call.message.chat.id)
+    handle_set_time_page(chat_id, page)
+
+def handle_set_time_page(chat_id, page):
+    if check_admin(chat_id):
+        markup = types.InlineKeyboardMarkup(row_width=3)
+        times = []
+        for hour in range(0, 24):
+            time_24h = f"{hour:02d}:30"
+            if hour == 0:
+                time_12h = "12:30 ص"
+            elif hour < 12:
+                time_12h = f"{hour}:30 ص"
+            elif hour == 12:
+                time_12h = "12:30 م"
+            else:
+                time_12h = f"{hour-12}:30 م"
+            emoji = "🕛" if hour == 0 else f"🕧" if hour == 12 else f"🕐" if hour == 1 else f"🕑" if hour == 2 else f"🕒" if hour == 3 else f"🕓" if hour == 4 else f"🕔" if hour == 5 else f"🕕" if hour == 6 else f"🕖" if hour == 7 else f"🕗" if hour == 8 else f"🕘" if hour == 9 else f"🕙" if hour == 10 else f"🕚" if hour == 11 else f"🕛" if hour == 12 else f"🕜" if hour == 13 else f"🕝" if hour == 14 else f"🕞" if hour == 15 else f"🕟" if hour == 16 else f"🕠" if hour == 17 else f"🕡" if hour == 18 else f"🕢" if hour == 19 else f"🕣" if hour == 20 else f"🕤" if hour == 21 else f"🕥" if hour == 22 else f"🕦" if hour == 23 else "🕛"
+            times.append((f"{emoji} {time_12h}", time_24h))
+        
+        start_idx = page * 8
+        end_idx = start_idx + 8
+        
+        for text, time_val in times[start_idx:end_idx]:
+            if time_val in groups_data.get(chat_id, {}).get("times", []):
+                text += " ✅"
+            markup.add(types.InlineKeyboardButton(text, callback_data=f"time_{time_val}"))
+        
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(types.InlineKeyboardButton("◀ السابق", callback_data=f"time_page_{page-1}"))
+        if end_idx < len(times):
+            nav_buttons.append(types.InlineKeyboardButton("التالي ▶", callback_data=f"time_page_{page+1}"))
+        
+        if nav_buttons:
+            markup.row(*nav_buttons)
+        
+        markup.add(types.InlineKeyboardButton("💾 حفظ الأوقات", callback_data="save_times"))
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"⏰ اختر أوقات الإرسال (الصفحة {page+1}):",
+            reply_markup=markup
+        )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("time_") and not call.data.startswith("time_page_"))
 def handle_time_selection(call):
     chat_id = str(call.message.chat.id)
     if check_admin(chat_id):
@@ -111,8 +187,7 @@ def handle_time_selection(call):
             bot.answer_callback_query(call.id, f"تم اختيار {selected_time} ✅")
         
         save_data()
-        # تحديث الواجهة
-        handle_set_time(call.message)
+        handle_set_time_page(chat_id, 0)  # العودة للصفحة الأولى بعد التحديث
 
 @bot.callback_query_handler(func=lambda call: call.data == "save_times")
 def save_times_callback(call):
@@ -169,20 +244,23 @@ def send_pages():
                         if data.get("last_sent") != now:
                             current_page = data["current_page"]
                             
-                            # إرسال الصفحتين
-                            for i in range(2):
-                                page_num = current_page + i
-                                if page_num > 604:
-                                    page_num = 1
-                                
-                                try:
-                                    bot.send_photo(
-                                        chat_id,
-                                        get_image_url(page_num),
-                                        caption=f"📖 الصفحة {page_num}"
-                                    )
-                                except Exception as e:
-                                    print(f"Error sending page {page_num} to {chat_id}: {e}")
+                            # إعداد الوسائط
+                            media = [
+                                types.InputMediaPhoto(
+                                    get_image_url(current_page),
+                                    caption=f"📖 الصفحة {current_page}"
+                                ),
+                                types.InputMediaPhoto(
+                                    get_image_url(current_page + 1),
+                                    caption=f"📖 الصفحة {current_page + 1}"
+                                )
+                            ]
+                            
+                            # إرسال الصورتين معًا
+                            try:
+                                bot.send_media_group(chat_id, media)
+                            except Exception as e:
+                                print(f"Error sending media group: {e}")
                             
                             # تحديث الصفحة
                             new_page = current_page + 2
@@ -204,25 +282,24 @@ def send_pages():
                         groups_data.pop(chat_id, None)
                         save_data()
             
-            time.sleep(60)  # انتظر دقيقة قبل الفحص التالي
+            time.sleep(30)  # تقليل معدل الفحص
         except Exception as e:
             print(f"Error in send_pages loop: {e}")
-            time.sleep(300)
-
-def run_bot():
-    try:
-        print("Starting bot polling...")
-        bot.polling(none_stop=True)
-    except Exception as e:
-        print(f"Bot polling error: {e}")
-        time.sleep(15)
-        run_bot()
+            time.sleep(60)
 
 if __name__ == "__main__":
-    # بدء ثانوي لإرسال الصفحات
-    sender_thread = threading.Thread(target=send_pages)
-    sender_thread.daemon = True
+    # حل نهائي لمشكلة التوكن المكرر
+    from telebot import apihelper
+    apihelper.SESSION_TIME_TO_LIVE = 60
+    
+    # بدء إرسال الصفحات في ثانوي منفصل
+    sender_thread = threading.Thread(target=send_pages, daemon=True)
     sender_thread.start()
     
-    # بدء البوت
-    run_bot()
+    # بدء البوت مع التعامل مع الأخطاء
+    while True:
+        try:
+            bot.infinity_polling(timeout=30, long_polling_timeout=20)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(15)
