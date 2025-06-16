@@ -169,7 +169,6 @@ def toggle_bot(message):
             status = "✅ مفعل" if groups_data[chat_id]["is_active"] else "❌ معطل"
             bot.reply_to(message, f"تم تغيير حالة البوت إلى: {status}")
 
-# أمر جديد لاختبار البوت
 @bot.message_handler(commands=['test'])
 def test_bot(message):
     chat_id = str(message.chat.id)
@@ -180,16 +179,16 @@ def test_bot(message):
             # إرسال رسالة تجريبية
             bot.send_message(chat_id, "🔍 جاري تجربة الإرسال...")
             
-            # إرسال الصفحات الحالية كتجربة
+            # إرسال الصورتين مع نص واحد للصورة الأولى فقط
             try:
                 media = [
                     types.InputMediaPhoto(
                         get_image_url(current_page),
-                        caption=f"📖 الصفحة {current_page} (تجربة)"
+                        caption=f"📖 الصفحة {current_page} - {current_page + 1}"
                     ),
                     types.InputMediaPhoto(
                         get_image_url(current_page + 1),
-                        caption=f"📖 الصفحة {current_page + 1} (تجربة)"
+                        caption=""
                     )
                 ]
                 bot.send_media_group(chat_id, media)
@@ -209,15 +208,15 @@ def send_pages():
                         if data.get("last_sent") != now:
                             current_page = data["current_page"]
                             
-                            # إعداد الوسائط
+                            # إعداد الوسائط مع نص للصورة الأولى فقط
                             media = [
                                 types.InputMediaPhoto(
                                     get_image_url(current_page),
-                                    caption=f"📖 الصفحة {current_page}"
+                                    caption=f"📖 الصفحة {current_page} - {current_page + 1}"
                                 ),
                                 types.InputMediaPhoto(
                                     get_image_url(current_page + 1),
-                                    caption=f"📖 الصفحة {current_page + 1}"
+                                    caption=""
                                 )
                             ]
                             
