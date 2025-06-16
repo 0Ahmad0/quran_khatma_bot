@@ -183,11 +183,11 @@ def test_bot(message):
             try:
                 media = [
                     types.InputMediaPhoto(
-                        get_image_url(current_page),
+                        get_image_url(current_page+1),
                         caption=f"📖 الصفحة {current_page} - {current_page + 1}"
                     ),
                     types.InputMediaPhoto(
-                        get_image_url(current_page + 1),
+                        get_image_url(current_page),
                         caption=""
                     )
                 ]
