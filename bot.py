@@ -1,3 +1,5 @@
+import threading
+
 import telebot
 from telebot import types
 import time
@@ -6,6 +8,8 @@ import os
 import json
 from datetime import datetime
 from dotenv import load_dotenv
+
+from web_server import app
 
 # تحميل بيانات التوكن من ملف .env
 load_dotenv()
@@ -147,3 +151,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"خطأ عام: {e}")
             time.sleep(15)
+
+
+def run_flask():
+    app.run(host="0.0.0.0", port=10000)
+
+if __name__ == "__main__":
+    threading.Thread(target=run_flask).start()
