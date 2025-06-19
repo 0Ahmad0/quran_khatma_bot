@@ -536,22 +536,31 @@ if __name__ == "__main__":
     from telebot import apihelper
     apihelper.SESSION_TIME_TO_LIVE = 60
     
-    # تأكد من عدم وجود نسخة أخرى تعمل
-    try:
-        bot.stop_polling()  # إيقاف أي عملية سابقة
-    except:
-        pass
-    
+    # إعدادات مهمة لمنع التكرار
+    bot.skip_pending = True  # تخطي الرسائل القديمة
+    bot.exception_handler = lambda e: print(f"Global error: {e}")
+
+    # دالة محسنة للاتصال
+    def start_polling():
+        while True:
+            try:
+                print("Starting bot polling...")
+                bot.infinity_polling(
+                    timeout=30,
+                    long_polling_timeout=20,
+                    restart_on_change=True,
+                    logger_level="INFO"
+                )
+            except ConnectionError as ce:
+                print(f"Connection error: {ce}. Retrying in 10 seconds...")
+                time.sleep(10)
+            except Exception as e:
+                print(f"Critical error: {e}. Restarting in 30 seconds...")
+                time.sleep(30)
+
     # بدء الجدولة في خيط منفصل
     scheduler_thread = threading.Thread(target=scheduler, daemon=True)
     scheduler_thread.start()
     
     # بدء البوت مع التعامل مع الأخطاء
-    while True:
-        try:
-            bot.infinity_polling(timeout=30, long_polling_timeout=20)
-        except Exception as e:
-            print(f"Polling error: {e}")
-            if "Conflict" in str(e):
-                print("⚠️ يوجد نسخة أخرى من البوت تعمل. سيتم إعادة المحاولة...")
-            time.sleep(15)
+    start_polling()
