@@ -62,24 +62,16 @@ def save_khatma_data():
 groups_data = load_data()
 khatma_data = load_khatma_data()
 
-# ========== نظام الصور القرآنية المحدث ==========
+# ========== نظام الصور القرآنية ==========
 def get_page_info(page):
     """ الحصول على معلومات الصفحة من API مع حساب الجزء """
     try:
-        response = requests.get(f"https://api.alquran.cloud/v1/page/{page}/quran-uthmani")
+        response = requests.get(f"https://api.alquran.cloud/v1/page/{page}/quran-uthmani", timeout=10)
         if response.status_code == 200:
             data = response.json()
-            
-            # استخراج اسم السورة من أول آية في الصفحة
             surah_name = data["data"]["ayahs"][0]["surah"]["name"]
-            
-            # حساب رقم الجزء (كل 20 صفحة جزء)
             juz_number = ((page - 1) // 20) + 1
-            
-            return {
-                "surah": surah_name,
-                "juz": juz_number
-            }
+            return {"surah": surah_name, "juz": juz_number}
         return {"surah": "غير معروف", "juz": "غير معروف"}
     except Exception as e:
         print(f"Error fetching page info: {e}")
@@ -93,7 +85,7 @@ def get_image_url(page):
 def get_random_ayah():
     """ جلب آية عشوائية من API """
     try:
-        response = requests.get("https://api.alquran.cloud/v1/ayah/random/ar.alafasy")
+        response = requests.get("https://api.alquran.cloud/v1/ayah/random/ar.alafasy", timeout=10)
         if response.status_code == 200:
             ayah = response.json()["data"]
             return f"{ayah['text']}\n(سورة {ayah['surah']['name']} - الآية {ayah['numberInSurah']})"
@@ -125,29 +117,27 @@ def check_admin(chat_id):
         return False
 
 # ========== أوامر البوت الأساسية ==========
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     try:
         chat_id = str(message.chat.id)
-        if check_admin(chat_id):
-            if chat_id not in groups_data:
-                groups_data[chat_id] = {
-                    # إعدادات الصور
-                    "current_page": 1,
-                    "image_time": None,
-                    "images_active": False,
-                    "last_image_sent": None,
-                    
-                    # إعدادات الختمة
-                    "current_part": 1,
-                    "khatma_time": None,
-                    "khatma_active": False,
-                    "last_khatma_sent": None,
-                    "completed_khatmas": 0
-                }
-                save_data()
-            
-            bot.reply_to(message, """
+        if message.chat.type in ["group", "supergroup"]:
+            if check_admin(chat_id):
+                if chat_id not in groups_data:
+                    groups_data[chat_id] = {
+                        "current_page": 1,
+                        "image_time": None,
+                        "images_active": False,
+                        "last_image_sent": None,
+                        "current_part": 1,
+                        "khatma_time": None,
+                        "khatma_active": False,
+                        "last_khatma_sent": None,
+                        "completed_khatmas": 0
+                    }
+                    save_data()
+                
+                welcome_msg = """
 🕌 *بوت ختمة القرآن الكريم* - الإصدار المطور 🕌
 
 ⚙️ *الأوامر المتاحة:*
@@ -169,11 +159,15 @@ def send_welcome(message):
 
 ⚙️ *أخرى:*
 /status - عرض جميع الإعدادات
-""", parse_mode="Markdown")
+"""
+                bot.reply_to(message, welcome_msg, parse_mode="Markdown")
+            else:
+                bot.reply_to(message, "⚠️ يجب أن تكون أدمن في المجموعة لاستخدام البوت")
         else:
-            bot.reply_to(message, "⚠️ يجب أن تكون أدمن في المجموعة لاستخدام البوت")
+            bot.reply_to(message, "⚠️ هذا البوت مخصص للمجموعات فقط")
     except Exception as e:
         print(f"Error in welcome handler: {e}")
+        bot.reply_to(message, "حدث خطأ أثناء معالجة الأمر. يرجى المحاولة لاحقاً.")
 
 # ========== الأوامر الجديدة ==========
 @bot.message_handler(commands=['set_start_page'])
@@ -192,7 +186,7 @@ def process_start_page(message):
         if check_admin(chat_id):
             try:
                 page = int(message.text)
-                if 1 <= page <= 603 and page % 2 == 1:  # التأكد من أن الرقم فردي
+                if 1 <= page <= 603 and page % 2 == 1:
                     groups_data[chat_id]["current_page"] = page
                     save_data()
                     bot.reply_to(message, f"✅ تم تعيين صفحة البدء إلى {page}")
@@ -294,10 +288,14 @@ def send_quran_pages(chat_id):
         data = groups_data[chat_id]
         current_page = data["current_page"]
         
-        # الحصول على معلومات الصفحة الأولى فقط
+        # التحقق من وجود الصفحة
+        if current_page > 604 or current_page < 1:
+            current_page = 1
+            data["current_page"] = 1
+
         page_info = get_page_info(current_page)
         
-        # إعداد الوسائط مع النص على الصورة الأولى فقط
+        # إعداد الوسائط مع التحقق من الصور
         media = [
             types.InputMediaPhoto(
                 get_image_url(current_page),
@@ -311,10 +309,15 @@ def send_quran_pages(chat_id):
             )
         ]
         
-        # إرسال الصور
-        bot.send_media_group(chat_id, media)
-        
-        # تحديث الصفحة التالية (صفحتين في كل مرة)
+        # إرسال الصور مع معالجة الأخطاء
+        try:
+            sent_msg = bot.send_media_group(chat_id, media)
+            print(f"تم الإرسال بنجاح إلى {chat_id}: {sent_msg}")
+        except Exception as send_error:
+            print(f"Error in sending: {send_error}")
+            raise  # لإظهار الخطأ للدالة الأم
+
+        # تحديث الصفحة
         new_page = current_page + 2
         if new_page > 604:
             new_page = 1
@@ -323,8 +326,7 @@ def send_quran_pages(chat_id):
                 "🎉 *تم الانتهاء من القرآن الكريم!*\n\nاللهم ارحمني بالقرآن واجعله لي نوراً وهدى ورحمة",
                 parse_mode="Markdown"
             )
-        
-        # حفظ البيانات
+
         data["current_page"] = new_page
         data["last_image_sent"] = datetime.now().strftime("%d/%m/%Y")
         save_data()
@@ -506,13 +508,17 @@ def scheduler():
                         data["image_time"] == now and 
                         data.get("last_image_sent") != today):
                         send_quran_pages(chat_id)
+                        data["last_image_sent"] = today
                     
                     # إرسال الختمة
                     if (data["khatma_active"] and 
                         data["khatma_time"] == now and 
                         data.get("last_khatma_sent") != today):
                         send_khatma_reminder(chat_id)
+                        data["last_khatma_sent"] = today
                     
+                    save_data()
+                        
                 except Exception as e:
                     print(f"Error in chat {chat_id}: {e}")
                     if "Forbidden" in str(e):  # إذا تم طرد البوت من المجموعة
