@@ -125,7 +125,7 @@ def check_admin(chat_id):
         return False
 
 # ========== أوامر البوت الأساسية ==========
-@bot.message_handler(commands=['start', 'help'])
+@bot.message_handler(commands=['start'])
 def send_welcome(message):
     try:
         chat_id = str(message.chat.id)
