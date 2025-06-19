@@ -534,7 +534,13 @@ def scheduler():
 
 if __name__ == "__main__":
     from telebot import apihelper
-    apihelper.SESSION_TIME_TO_LIVE = 60  # تجنب تكرار التوكن
+    apihelper.SESSION_TIME_TO_LIVE = 60
+    
+    # تأكد من عدم وجود نسخة أخرى تعمل
+    try:
+        bot.stop_polling()  # إيقاف أي عملية سابقة
+    except:
+        pass
     
     # بدء الجدولة في خيط منفصل
     scheduler_thread = threading.Thread(target=scheduler, daemon=True)
@@ -546,5 +552,6 @@ if __name__ == "__main__":
             bot.infinity_polling(timeout=30, long_polling_timeout=20)
         except Exception as e:
             print(f"Polling error: {e}")
-            bot.send_message(ADMIN_ID, f"⚠️ خطأ في تشغيل البوت: {str(e)}")
+            if "Conflict" in str(e):
+                print("⚠️ يوجد نسخة أخرى من البوت تعمل. سيتم إعادة المحاولة...")
             time.sleep(15)
