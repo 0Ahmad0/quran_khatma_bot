@@ -531,36 +531,20 @@ def scheduler():
             print(f"Critical error in scheduler: {e}")
             bot.send_message(ADMIN_ID, f"🚨 البوت تعطل: {str(e)}")
             time.sleep(60)
-
+            
 if __name__ == "__main__":
+    # حل نهائي لمشكلة التوكن المكرر
     from telebot import apihelper
     apihelper.SESSION_TIME_TO_LIVE = 60
     
-    # إعدادات مهمة لمنع التكرار
-    bot.skip_pending = True  # تخطي الرسائل القديمة
-    bot.exception_handler = lambda e: print(f"Global error: {e}")
-
-    # دالة محسنة للاتصال
-    def start_polling():
-        while True:
-            try:
-                print("Starting bot polling...")
-                bot.infinity_polling(
-                    timeout=30,
-                    long_polling_timeout=20,
-                    restart_on_change=True,
-                    logger_level="INFO"
-                )
-            except ConnectionError as ce:
-                print(f"Connection error: {ce}. Retrying in 10 seconds...")
-                time.sleep(10)
-            except Exception as e:
-                print(f"Critical error: {e}. Restarting in 30 seconds...")
-                time.sleep(30)
-
-    # بدء الجدولة في خيط منفصل
-    scheduler_thread = threading.Thread(target=scheduler, daemon=True)
-    scheduler_thread.start()
+    # بدء إرسال الصفحات في ثانوي منفصل
+    sender_thread = threading.Thread(target=send_pages, daemon=True)
+    sender_thread.start()
     
     # بدء البوت مع التعامل مع الأخطاء
-    start_polling()
+    while True:
+        try:
+            bot.infinity_polling(timeout=30, long_polling_timeout=20)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(15) 
