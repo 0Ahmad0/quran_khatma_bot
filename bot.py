@@ -537,10 +537,6 @@ if __name__ == "__main__":
     from telebot import apihelper
     apihelper.SESSION_TIME_TO_LIVE = 60
     
-    # بدء إرسال الصفحات في ثانوي منفصل
-    sender_thread = threading.Thread(target=send_pages, daemon=True)
-    sender_thread.start()
-    
     # بدء البوت مع التعامل مع الأخطاء
     while True:
         try:
