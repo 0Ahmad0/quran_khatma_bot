@@ -20,8 +20,9 @@ KHATMA_FILE = "khatma_data.json"
 # الأوقات المتاحة للاختيار
 AVAILABLE_TIMES = [
     "01:00", "03:00", "05:00", 
-    "11:00", "12:00", "14:00", 
-    "16:00", "18:00"
+    "07:00", "09:00", "11:00", 
+    "13:00", "15:00", "17:00", 
+    "19:00", "21:00", "23:00"
 ]
 
 # تحميل البيانات
@@ -29,7 +30,14 @@ def load_data():
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, "r", encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # تحويل البيانات القديمة إلى التنسيق الجديد
+                for chat_id, group_data in data.items():
+                    if "image_time" in group_data:
+                        group_data["image_times"] = [group_data.pop("image_time")] if group_data["image_time"] else []
+                    if "khatma_time" in group_data:
+                        group_data["khatma_times"] = [group_data.pop("khatma_time")] if group_data["khatma_time"] else []
+                return data
         return {}
     except Exception as e:
         print(f"Error loading data: {e}")
@@ -126,11 +134,11 @@ def send_welcome(message):
                 if chat_id not in groups_data:
                     groups_data[chat_id] = {
                         "current_page": 1,
-                        "image_time": None,
+                        "image_times": [],
                         "images_active": False,
                         "last_image_sent": None,
                         "current_part": 1,
-                        "khatma_time": None,
+                        "khatma_times": [],
                         "khatma_active": False,
                         "last_khatma_sent": None,
                         "completed_khatmas": 0
@@ -227,14 +235,38 @@ def process_start_part(message):
 # ========== دوال إعداد الأوقات ==========
 def create_time_keyboard(prefix):
     """ إنشاء لوحة مفاتيح لاختيار الوقت """
-    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    buttons = []
     for time_str in AVAILABLE_TIMES:
         hour = int(time_str.split(":")[0])
         time_display = f"{hour}:00 {'ص' if hour < 12 else 'م'}"
-        markup.add(types.InlineKeyboardButton(
+        callback_data = f"{prefix}_{time_str}"
+        
+        # تحديد إذا كان الوقت محدد مسبقاً
+        chat_id = str(call.message.chat.id) if prefix == "image" else str(call.message.chat.id)
+        if prefix == "image":
+            selected = time_str in groups_data.get(chat_id, {}).get("image_times", [])
+        else:
+            selected = time_str in groups_data.get(chat_id, {}).get("khatma_times", [])
+            
+        if selected:
+            time_display = "✅ " + time_display
+            
+        buttons.append(types.InlineKeyboardButton(
             text=time_display,
-            callback_data=f"{prefix}_{time_str}"
+            callback_data=callback_data
         ))
+    
+    # تقسيم الأزرار إلى صفوف كل 3 أزرار
+    for i in range(0, len(buttons), 3):
+        markup.row(*buttons[i:i+3])
+    
+    # زر إنهاء الاختيار
+    markup.row(types.InlineKeyboardButton(
+        text="تم الاختيار",
+        callback_data=f"done_{prefix}"
+    ))
+    
     return markup
 
 @bot.message_handler(commands=['set_image_time'])
@@ -244,7 +276,7 @@ def set_image_time(message):
         if check_admin(chat_id):
             bot.send_message(
                 chat_id,
-                "⏰ اختر وقت إرسال الصور اليومية:",
+                "⏰ اختر وقت إرسال الصور اليومية (يمكن اختيار أكثر من وقت):",
                 reply_markup=create_time_keyboard("image_time")
             )
     except Exception as e:
@@ -257,28 +289,63 @@ def set_khatma_time(message):
         if check_admin(chat_id):
             bot.send_message(
                 chat_id,
-                "⏰ اختر وقت إرسال تذكير الختمة اليومية:",
+                "⏰ اختر وقت إرسال تذكير الختمة اليومية (يمكن اختيار أكثر من وقت):",
                 reply_markup=create_time_keyboard("khatma_time")
             )
     except Exception as e:
         print(f"Error in set_khatma_time: {e}")
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith(("image_time_", "khatma_time_")))
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("image_time_", "khatma_time_", "done_")))
 def handle_time_selection(call):
     try:
         chat_id = str(call.message.chat.id)
-        if check_admin(chat_id):
-            prefix, selected_time = call.data.split("_", 1)
-            time_display = f"{int(selected_time.split(':')[0])}:00 {'ص' if int(selected_time.split(':')[0]) < 12 else 'م'}"
+        if not check_admin(chat_id):
+            bot.answer_callback_query(call.id, "⚠️ يجب أن تكون أدمن لاستخدام هذا الأمر")
+            return
             
-            if prefix == "image":
-                groups_data[chat_id]["image_time"] = selected_time
-                bot.answer_callback_query(call.id, f"تم تعيين وقت الصور إلى {time_display}")
+        if call.data.startswith("done_"):
+            prefix = call.data.split("_")[1]
+            bot.answer_callback_query(call.id, "تم حفظ الأوقات المحددة")
+            bot.edit_message_reply_markup(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=None
+            )
+            return
+            
+        prefix, selected_time = call.data.split("_", 1)
+        time_display = f"{int(selected_time.split(':')[0])}:00 {'ص' if int(selected_time.split(':')[0]) < 12 else 'م'}"
+        
+        if prefix == "image":
+            times_list = groups_data[chat_id].get("image_times", [])
+            if selected_time in times_list:
+                times_list.remove(selected_time)
+                action = "إزالة"
             else:
-                groups_data[chat_id]["khatma_time"] = selected_time
-                bot.answer_callback_query(call.id, f"تم تعيين وقت الختمة إلى {time_display}")
-            
-            save_data()
+                times_list.append(selected_time)
+                action = "إضافة"
+            groups_data[chat_id]["image_times"] = times_list
+        else:
+            times_list = groups_data[chat_id].get("khatma_times", [])
+            if selected_time in times_list:
+                times_list.remove(selected_time)
+                action = "إزالة"
+            else:
+                times_list.append(selected_time)
+                action = "إضافة"
+            groups_data[chat_id]["khatma_times"] = times_list
+        
+        save_data()
+        bot.answer_callback_query(call.id, f"{action} الوقت {time_display}")
+        
+        # تحديث لوحة المفاتيح لتعكس التغييرات
+        new_prefix = "image" if prefix == "image" else "khatma"
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=create_time_keyboard(f"{new_prefix}_time")
+        )
+        
     except Exception as e:
         print(f"Error in time selection: {e}")
 
@@ -286,6 +353,9 @@ def handle_time_selection(call):
 def send_quran_pages(chat_id):
     try:
         data = groups_data[chat_id]
+        if not data.get("images_active", False):
+            return False
+            
         current_page = data["current_page"]
         
         # التحقق من وجود الصفحة
@@ -330,17 +400,19 @@ def send_quran_pages(chat_id):
         data["current_page"] = new_page
         data["last_image_sent"] = datetime.now().strftime("%d/%m/%Y")
         save_data()
+        return True
         
     except Exception as e:
         print(f"Error sending pages: {e}")
         bot.send_message(ADMIN_ID, f"⚠️ خطأ في إرسال الصفحات: {str(e)}")
+        return False
 
 @bot.message_handler(commands=['start_images'])
 def start_images(message):
     try:
         chat_id = str(message.chat.id)
         if check_admin(chat_id):
-            if groups_data[chat_id]["image_time"] is None:
+            if not groups_data[chat_id]["image_times"]:
                 bot.reply_to(message, "⚠️ يرجى تحديد وقت الإرسال أولاً باستخدام /set_image_time")
             else:
                 groups_data[chat_id]["images_active"] = True
@@ -365,8 +437,15 @@ def test_images(message):
     try:
         chat_id = str(message.chat.id)
         if check_admin(chat_id):
+            if not groups_data[chat_id]["images_active"]:
+                bot.reply_to(message, "⚠️ إرسال الصور معطل حالياً. استخدم /start_images لتفعيله.")
+                return
+                
             bot.send_message(chat_id, "🔍 جاري اختبار إرسال الصفحات...")
-            send_quran_pages(chat_id)
+            if send_quran_pages(chat_id):
+                bot.send_message(chat_id, "✅ تم اختبار إرسال الصور بنجاح")
+            else:
+                bot.send_message(chat_id, "❌ فشل في إرسال الصور")
     except Exception as e:
         print(f"Error in test_images: {e}")
 
@@ -374,6 +453,9 @@ def test_images(message):
 def send_khatma_reminder(chat_id):
     try:
         data = groups_data[chat_id]
+        if not data.get("khatma_active", False):
+            return False
+            
         today = datetime.now().strftime("%d/%m/%Y")
         part = (data.get("current_part", 1) % 30) or 30
         
@@ -406,17 +488,19 @@ def send_khatma_reminder(chat_id):
         data["current_part"] = part + 1
         data["last_khatma_sent"] = today
         save_data()
+        return True
         
     except Exception as e:
         print(f"Error in khatma reminder: {e}")
         bot.send_message(ADMIN_ID, f"⚠️ خطأ في إرسال الختمة: {str(e)}")
+        return False
 
 @bot.message_handler(commands=['start_khatma'])
 def start_khatma(message):
     try:
         chat_id = str(message.chat.id)
         if check_admin(chat_id):
-            if groups_data[chat_id]["khatma_time"] is None:
+            if not groups_data[chat_id]["khatma_times"]:
                 bot.reply_to(message, "⚠️ يرجى تحديد وقت الإرسال أولاً باستخدام /set_khatma_time")
             else:
                 groups_data[chat_id]["khatma_active"] = True
@@ -441,7 +525,14 @@ def test_khatma(message):
     try:
         chat_id = str(message.chat.id)
         if check_admin(chat_id):
-            send_khatma_reminder(chat_id)
+            if not groups_data[chat_id]["khatma_active"]:
+                bot.reply_to(message, "⚠️ إرسال الختمة معطل حالياً. استخدم /start_khatma لتفعيله.")
+                return
+                
+            if send_khatma_reminder(chat_id):
+                bot.reply_to(message, "✅ تم اختبار إرسال الختمة بنجاح")
+            else:
+                bot.reply_to(message, "❌ فشل في إرسال الختمة")
     except Exception as e:
         print(f"Error in test_khatma: {e}")
 
@@ -462,19 +553,17 @@ def show_status(message):
             data = groups_data.get(chat_id, {})
             
             # تحويل الأوقات إلى تنسيق 12 ساعة
-            image_time = data.get("image_time")
-            if image_time:
-                hour = int(image_time.split(":")[0])
-                image_time_display = f"{hour}:00 {'ص' if hour < 12 else 'م'}"
-            else:
-                image_time_display = "غير محدد"
+            image_times = data.get("image_times", [])
+            image_times_display = []
+            for time_str in image_times:
+                hour = int(time_str.split(":")[0])
+                image_times_display.append(f"{hour}:00 {'ص' if hour < 12 else 'م'}")
             
-            khatma_time = data.get("khatma_time")
-            if khatma_time:
-                hour = int(khatma_time.split(":")[0])
-                khatma_time_display = f"{hour}:00 {'ص' if hour < 12 else 'م'}"
-            else:
-                khatma_time_display = "غير محدد"
+            khatma_times = data.get("khatma_times", [])
+            khatma_times_display = []
+            for time_str in khatma_times:
+                hour = int(time_str.split(":")[0])
+                khatma_times_display.append(f"{hour}:00 {'ص' if hour < 12 else 'م'}")
             
             status_text = f"""
 ⚙️ *الإعدادات الحالية:*
@@ -482,12 +571,12 @@ def show_status(message):
 📖 *نظام الصور:*
 - الحالة: {'✅ مفعل' if data.get('images_active', False) else '❌ معطل'}
 - الصفحة الحالية: {data.get('current_page', 1)}
-- وقت الإرسال: {image_time_display}
+- أوقات الإرسال: {', '.join(image_times_display) if image_times_display else 'غير محدد'}
 
 📜 *نظام الختمة:*
 - الحالة: {'✅ مفعل' if data.get('khatma_active', False) else '❌ معطل'}
 - الجزء الحالي: {data.get('current_part', 1)}
-- وقت الإرسال: {khatma_time_display}
+- أوقات الإرسال: {', '.join(khatma_times_display) if khatma_times_display else 'غير محدد'}
 - الختمات المكتملة: {data.get('completed_khatmas', 0)}
 """
             bot.reply_to(message, status_text, parse_mode="Markdown")
@@ -504,18 +593,18 @@ def scheduler():
             for chat_id, data in list(groups_data.items()):
                 try:
                     # إرسال الصور
-                    if (data["images_active"] and 
-                        data["image_time"] == now and 
+                    if (data.get("images_active", False) and 
+                        now in data.get("image_times", []) and 
                         data.get("last_image_sent") != today):
-                        send_quran_pages(chat_id)
-                        data["last_image_sent"] = today
+                        if send_quran_pages(chat_id):
+                            data["last_image_sent"] = today
                     
                     # إرسال الختمة
-                    if (data["khatma_active"] and 
-                        data["khatma_time"] == now and 
+                    if (data.get("khatma_active", False) and 
+                        now in data.get("khatma_times", []) and 
                         data.get("last_khatma_sent") != today):
-                        send_khatma_reminder(chat_id)
-                        data["last_khatma_sent"] = today
+                        if send_khatma_reminder(chat_id):
+                            data["last_khatma_sent"] = today
                     
                     save_data()
                         
@@ -540,7 +629,9 @@ if __name__ == "__main__":
     # بدء البوت مع التعامل مع الأخطاء
     while True:
         try:
+            # بدء الجدولة في خيط منفصل
+            threading.Thread(target=scheduler, daemon=True).start()
             bot.infinity_polling(timeout=30, long_polling_timeout=20)
         except Exception as e:
             print(f"Polling error: {e}")
-            time.sleep(15) 
+            time.sleep(15)
